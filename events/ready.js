@@ -24,7 +24,7 @@ export async function execute(bot, commands) {
       await rest.put(Routes.applicationGuildCommands(CLIENT_ID, process.env.GUILD_ID), {
         body: commands
       });
-      console.log("Sucessfully registered commands locally.", bot.commands);
+      console.log("Sucessfully registered commands locally.");
       // }
     } catch (err) {
       if (err) console.error(err);
