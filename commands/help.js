@@ -23,6 +23,9 @@ export async function execute(interaction) {
       {
         name: '/poll',
         value: 'Create a poll.\n**Example with options:** `/poll question: What is your favorite color? options: Red, Blue, Green`\n**Example without options:** `/poll question: What should we have for lunch?`',
+      },{
+        name: '/schedule',
+        value: 'Suggests optimal meeting times based on recent conversation.\n**Example usage:** `/schedule`\n\nThe bot will analyze the last 25 messages in the current channel to propose three possible meeting times, taking user preferences into account (such as after 5 PM and weekends). Users can then vote on the suggested times, and the bot will select the time with at least two votes. Once scheduled, daily reminders will be sent leading up to the meeting.',
       },
       {
         name: '/remindme',
