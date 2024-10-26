@@ -142,11 +142,32 @@ async function getLastMessageTimestamp(member) {
 // Function to remove member
 async function removeMember(member) {
   try {
+    // Construct the message content
+    const messageContent = process.env.DRY_RUN === 'true'
+      ? `[DRY RUN] Would remove member ${member.user.tag} for inactivity.`
+      : `Removed member ${member.user.tag} for inactivity.`;
+
+    // Fetch all text channels where the bot has permission to send messages
+    const channels = member.guild.channels.cache.filter(channel => 
+      channel.isText() && 
+      channel.permissionsFor(member.guild.members.me).has('SendMessages')
+    );
+
+    // Send the message in each channel
+    for (const [channelId, channel] of channels) {
+      try {
+        await channel.send(messageContent);
+      } catch (err) {
+        console.error(`Failed to send message in channel ${channel.name}:`, err);
+      }
+    }
+
     if (process.env.DRY_RUN === 'true') {
       console.log(`[DRY RUN] Would remove member ${member.user.tag} for inactivity.`);
       return;
     }
-    const botMember = await member.guild.members.fetch(bot.user.id);
+
+    const botMember = await member.guild.members.fetch(member.guild.members.me.id);
     if (!botMember.permissions.has('KICK_MEMBERS')) {
       console.error('Bot lacks KICK_MEMBERS permission.');
       return;
