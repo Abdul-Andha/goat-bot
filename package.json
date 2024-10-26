@@ -16,6 +16,6 @@
     "node-cron": "^3.0.3",
     "nodemon": "^3.1.4"
   },
-  "nodeVersion": "22.0.0"
+  "nodeVersion": "21.6.2"
 
 }
