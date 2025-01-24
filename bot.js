@@ -149,7 +149,7 @@ async function removeMember(member) {
 
     // Fetch all text channels where the bot has permission to send messages
     const channels = member.guild.channels.cache.filter(channel => 
-      channel.isText() && 
+      channel.isTextBased() && 
       channel.permissionsFor(member.guild.members.me).has('SendMessages')
     );
 
