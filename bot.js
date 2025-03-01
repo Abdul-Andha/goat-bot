@@ -80,19 +80,19 @@ async function checkUserInactivity() {
 
       if (lastMessageTimestamp) {
         const daysInactive = (Date.now() - lastMessageTimestamp) / (1000 * 60 * 60 * 24);
-        if (daysInactive > 30) {
+        if (daysInactive > 100) { // Changed from 30 to 100 days
           await removeMember(member);
         }
       } else {
         // Member has never sent a message
         const daysSinceJoin = (Date.now() - member.joinedTimestamp) / (1000 * 60 * 60 * 24);
-        if (daysSinceJoin > 30) {
+        if (daysSinceJoin > 100) { // Changed from 30 to 100 days
           await removeMember(member);
         }
       }
 
       // Add a delay between processing members to avoid rate limits
-      await delay(1000); // Wait for 1 second
+      await delay(2000); // Increased from 1s to 2s
     }
   } catch (err) {
     console.error('Error checking user inactivity:', err);
@@ -102,6 +102,7 @@ async function checkUserInactivity() {
 // Function to get the last message timestamp of a member
 async function getLastMessageTimestamp(member) {
   try {
+    // Get all text-based channels including threads
     const channels = member.guild.channels.cache.filter(channel => channel.isTextBased());
 
     let lastTimestamp = null;
@@ -120,7 +121,7 @@ async function getLastMessageTimestamp(member) {
           lastMessageId = fetchedMessages.last().id;
 
           // Add a delay between message fetches to avoid rate limits
-          await delay(500); // Wait for 0.5 seconds
+          await delay(1000); // Increased from 0.5s to 1s
         }
 
         const userMessages = messages.filter(msg => msg.author.id === member.id);
@@ -138,7 +139,7 @@ async function getLastMessageTimestamp(member) {
       }
 
       // Add a delay between processing channels to avoid rate limits
-      await delay(500); // Wait for 0.5 seconds
+      await delay(1000); // Increased from 0.5s to 1s
     }
 
     return lastTimestamp;
@@ -187,7 +188,7 @@ async function removeMember(member) {
       return;
     }
 
-    await member.kick('Inactive for over 30 days');
+    await member.kick('Inactive for over 100 days'); // Changed from 30 to 100 days
     console.log(`Removed member ${member.user.tag} for inactivity.`);
   } catch (err) {
     console.error(`Failed to remove member ${member.user.tag}:`, err);
