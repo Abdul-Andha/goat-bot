@@ -5,7 +5,10 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 // Import node-cron for scheduling tasks
-import cron from 'node-cron'; // Add this line
+import cron from 'node-cron';
+
+// Import the daily news generator
+import { generateDailyNews } from './commands/dailyNews.js';
 
 // Setting new client
 const bot = new Client({
@@ -46,6 +49,12 @@ bot.login(process.env.TOKEN);
 // Schedule a task to run at midnight on the first of every month
 cron.schedule('0 0 1 * *', async () => {
   await checkUserInactivity();
+});
+
+// Schedule daily news at 9:00 AM EST (14:00 UTC)
+cron.schedule('0 14 * * *', async () => {
+  console.log('Running scheduled daily news generation...');
+  await generateDailyNews(bot);
 });
 
 // Function to check user inactivity
