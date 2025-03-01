@@ -1,4 +1,5 @@
 // Imports
+import './node-polyfill.js';
 import { readdirSync } from 'fs';
 import { Client, GatewayIntentBits, Collection } from 'discord.js';
 import dotenv from 'dotenv';
