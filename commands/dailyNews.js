@@ -76,15 +76,11 @@ export async function generateDailyNews(client) {
     // Format the summary with proper @mentions
     const { formattedSummary, mentionedUsers } = formatFinalSummary(summary, userMap);
     
-    // Format the date for the header
-    const today = new Date();
-    const dateStr = `${today.getMonth() + 1}/${today.getDate()}/${today.getFullYear()}`;
-    
     // Find or create news channel and post summary
     const newsChannel = await getNewsChannel(guild);
     if (newsChannel) {
       await newsChannel.send({
-        content: `📰 **Daily Server News: ${dateStr}**\n\n${formattedSummary}`,
+        content: formattedSummary,
         allowedMentions: { users: mentionedUsers }
       });
       console.log('Daily news posted successfully!');
@@ -217,27 +213,60 @@ function extractUserMap(messages) {
  * Format the final summary with proper Discord @mentions
  */
 function formatFinalSummary(summary, userMap) {
-  // Replace bold usernames with @mentions using regex
   let formattedSummary = summary;
-  
-  // Process all **Username** patterns
-  const boldUsernamePattern = /\*\*([\w\d_]+)\*\*/g;
-  const matches = [...summary.matchAll(boldUsernamePattern)];
-  
-  // Find all users that were mentioned in the summary
   const mentionedUsers = new Set();
-  matches.forEach(match => {
-    const username = match[1];
-    if (userMap.has(username)) {
-      const userId = userMap.get(username);
-      // Replace **Username** with **<@userId>**
-      formattedSummary = formattedSummary.replace(
-        `**${username}**`, 
-        `**<@${userId}>**`
-      );
-      mentionedUsers.add(userId);
+  
+  // Process mentions in different formats:
+  // 1. Handle @Username format
+  const atMentionPattern = /@([\w\d_\s.-]+(\([^)]*\))?)/g;
+  let match;
+  while ((match = atMentionPattern.exec(summary)) !== null) {
+    const fullUsername = match[1].trim();
+    // Find the closest matching username in our userMap
+    for (const [username, userId] of userMap.entries()) {
+      if (fullUsername.includes(username) || username.includes(fullUsername)) {
+        const replacement = `<@${userId}>`;
+        formattedSummary = formattedSummary.replace(`@${fullUsername}`, replacement);
+        mentionedUsers.add(userId);
+        break;
+      }
     }
-  });
+  }
+  
+  // 2. Handle **@Username** format
+  const boldAtMentionPattern = /\*\*@([\w\d_\s.-]+(\([^)]*\))?)\*\*/g;
+  while ((match = boldAtMentionPattern.exec(summary)) !== null) {
+    const fullUsername = match[1].trim();
+    // Find the closest matching username in our userMap
+    for (const [username, userId] of userMap.entries()) {
+      if (fullUsername.includes(username) || username.includes(fullUsername)) {
+        const replacement = `**<@${userId}>**`;
+        formattedSummary = formattedSummary.replace(`**@${fullUsername}**`, replacement);
+        mentionedUsers.add(userId);
+        break;
+      }
+    }
+  }
+  
+  // 3. Handle **Username** format (without @)
+  const boldUsernamePattern = /\*\*([\w\d_\s.-]+(\([^)]*\))?)\*\*/g;
+  while ((match = boldUsernamePattern.exec(summary)) !== null) {
+    const fullUsername = match[1].trim();
+    // Skip if it already contains a mention
+    if (fullUsername.includes('<@')) continue;
+    
+    // Find the closest matching username in our userMap
+    for (const [username, userId] of userMap.entries()) {
+      if (fullUsername.includes(username) || username.includes(fullUsername)) {
+        const replacement = `**<@${userId}>**`;
+        // Use a more precise replacement to avoid double-replacing
+        const exactPattern = new RegExp(`\\*\\*${fullUsername.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\*\\*`, 'g');
+        formattedSummary = formattedSummary.replace(exactPattern, replacement);
+        mentionedUsers.add(userId);
+        break;
+      }
+    }
+  }
   
   return {
     formattedSummary,
@@ -250,23 +279,33 @@ function formatFinalSummary(summary, userMap) {
  */
 async function generateSummary(messageContext) {
   const prompt = `
-You are tasked with creating a daily summary for a Discord server focused on technology. The server members discuss computer science, machine learning, AI, cutting-edge tech, startups, and entrepreneurship. They are technically skilled and enjoy building projects.
+You are creating a daily summary for a Discord server focused on technology. The server members discuss computer science, machine learning, AI, tech news, startups, and coding projects. They are technically skilled and enjoy edgy humor.
 
-I'll provide you with Discord messages from the last 24 hours. Your job is to create a fun, engaging summary that highlights key discussions and funny moments.
+I'll provide you with Discord messages from the last 24 hours. Your job is to create a summary that highlights key discussions and memorable moments.
+
+YOUR PERSONA: You're "TechBro69", an edgy, sarcastic techie who doesn't hold back. You're blunt, sometimes crude, and love making edgy jokes. You speak in a casual, internet-culture way with occasional leetspeak. You're obsessed with the latest tech trends and always ready with hot takes.
 
 Guidelines:
-1. Start with a single paragraph summary (max 200 words)
-2. Make it humorous and engaging
-3. Use people's usernames in bold whenever you mention them
+1. Use Discord markdown formatting liberally for better readability (bold, italics, headings, bullet points)
+2. Structure the summary in clear sections rather than one big paragraph
+3. Use people's usernames with proper Discord @ mention format
 4. Include important discussions, jokes, and memorable moments
-5. Focus on making it skimmable with clear visual structure
-6. End with a "Today's Highlight" section featuring the funniest or most memorable quote
+5. Maintain an edgy, sarcastic tone throughout 
+6. End with a "Today's Highlight" section featuring the most memorable quote
 
-Format your response exactly like this:
-"In the last 24 hours, our server has been buzzing with [summary of activities]. **Username1** discussed [topic], while **Username2** debated [another topic]. [Continue with other interesting highlights and conversations]."
-
-🏆 Today's Highlight: **Username** with "[their exact quote]"
-
+Format your response with sections like this:
+**# Daily Tech Trash**
+**## Server Vibe Check**
+[Brief overview paragraph about today's server mood/activity level]
+**## Hot Topics*
+• [Topic 1 with usernames and commentary]
+**## Tech Corner**
+[Any discussions about gadgets, code, or tech news]
+**## Random BS**
+[Funny moments, memes, or off-topic discussions]
+**## 🏆 Quote of the Day**
+> "[exact quote]" - **@Username**
+Use plenty of Discord markdown: **bold**, *italics*, || spoiler tags ||, > quote blocks, \`\`\`code blocks\`\`\`, and emojis and also make sure not to have too much spacing in the message conservative without it being overly compressed.
 Here are the messages from the last 24 hours:
 
 ${messageContext}`;
@@ -283,9 +322,9 @@ ${messageContext}`;
       },
       data: {
         model: 'claude-3-7-sonnet-20250219',
-        max_tokens: 1500,
+        max_tokens: 500,
         temperature: 1.0,
-        system: "You generate entertaining daily summaries of Discord conversations for tech-focused servers.",
+        system: "You generate entertaining daily summaries of Discord conversations for tech-focused servers. You adopt an edgy, sarcastic 'TechBro69' persona who uses Discord markdown formatting to create readable, sectioned summaries. Your tone is blunt, sometimes crude, and includes edgy humor while highlighting the day's most interesting conversations.",
         messages: [
           {
             role: 'user',
