@@ -31,7 +31,10 @@ export async function execute(interaction) {
         name: '/remindme',
         value: 'Set a reminder.\n**Example:** `/remindme message: Stand up and stretch! minutes: 30`',
       },
-      // Add more commands here if needed
+      {
+        name: '/research',
+        value: 'Perform deep research on any topic using AI and web search.\n**Example:** `/research query: Impact of AI on healthcare breadth: 3 depth: 2`\n\nThe bot will search the web for information, analyze the results, and generate a comprehensive report. The breadth parameter (1-10) controls how many different search queries to perform, and the depth parameter (1-5) controls how many levels of follow-up research to conduct.',
+      },
     )
     .setFooter({ text: 'Use /help anytime to see this message again.' });
 

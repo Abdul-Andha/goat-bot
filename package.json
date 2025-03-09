@@ -11,12 +11,15 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@mendable/firecrawl-js": "^1.16.0",
+    "axios": "^1.6.8",
     "chrono-node": "^2.7.7",
     "discord.js": "^14.15.3",
     "dotenv": "^16.4.5",
     "node-cron": "^3.0.3",
     "nodemon": "^3.1.4",
-    "openai": "^3.3.0"
+    "openai": "^3.3.0",
+    "uuid": "^9.0.1"
   },
   "nodeVersion": "21.6.2"
 }
