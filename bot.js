@@ -156,18 +156,25 @@ async function removeMember(member) {
       ? `[DRY RUN] Would remove member ${member.user.tag} for inactivity.`
       : `Removed member ${member.user.tag} for inactivity.`;
 
-    // Fetch all text channels where the bot has permission to send messages
-    const channels = member.guild.channels.cache.filter(channel => 
+    // Find the general channel
+    const generalChannel = member.guild.channels.cache.find(channel => 
+      (channel.name === 'general' || channel.name === 'chat') && 
       channel.isTextBased() && 
       channel.permissionsFor(member.guild.members.me).has('SendMessages')
     );
 
-    // Send the message in each channel
-    for (const [channelId, channel] of channels) {
-      try {
-        await channel.send(messageContent);
-      } catch (err) {
-        console.error(`Failed to send message in channel ${channel.name}:`, err);
+    if (generalChannel) {
+      // Send the message only to the general channel
+      await generalChannel.send(messageContent);
+    } else {
+      // Fallback: find any text channel if general doesn't exist
+      const anyTextChannel = member.guild.channels.cache.find(channel => 
+        channel.isTextBased() && 
+        channel.permissionsFor(member.guild.members.me).has('SendMessages')
+      );
+      
+      if (anyTextChannel) {
+        await anyTextChannel.send(messageContent);
       }
     }
 
@@ -187,7 +194,7 @@ async function removeMember(member) {
       return;
     }
 
-    await member.kick('Inactive for over 100 days'); // Changed from 30 to 100 days
+    await member.kick('Inactive for over 100 days');
     console.log(`Removed member ${member.user.tag} for inactivity.`);
   } catch (err) {
     console.error(`Failed to remove member ${member.user.tag}:`, err);
