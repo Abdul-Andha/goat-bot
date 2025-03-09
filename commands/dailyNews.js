@@ -57,9 +57,10 @@ export async function generateDailyNews(client) {
       return;
     }
     
-    // Get recent messages
-    const messages = await collectRecentMessages(guild);
+    // Get recent messages with images
+    const { messages, images } = await collectRecentMessagesAndImages(guild);
     console.log(`Collected ${messages.length} messages from the last 24 hours.`);
+    console.log(`Collected ${images.length} images from the last 24 hours.`);
     
     if (messages.length === 0) {
       console.log('No messages to summarize.');
@@ -71,18 +72,27 @@ export async function generateDailyNews(client) {
     
     // Format messages and generate summary
     const messageContext = formatMessagesForContext(messages);
-    const summary = await generateSummary(messageContext, userMap);
+    const summary = await generateSummary(messageContext, images);
+
+    // Extract sections from the summary
+    const sections = extractSections(summary);
     
-    // Format the summary with proper @mentions
-    const { formattedSummary, mentionedUsers } = formatFinalSummary(summary, userMap);
+    // Format the sections with proper @mentions
+    const formattedSections = formatSectionsWithMentions(sections, userMap);
     
-    // Find or create news channel and post summary
+    // Find or create news channel and post summary sections
     const newsChannel = await getNewsChannel(guild);
     if (newsChannel) {
-      await newsChannel.send({
-        content: formattedSummary,
-        allowedMentions: { users: mentionedUsers }
-      });
+      // Post each section as a separate message
+      for (const section of formattedSections) {
+        await newsChannel.send({
+          content: section.content,
+          allowedMentions: { users: section.mentionedUsers }
+        });
+        
+        // Add a small delay between messages to ensure proper ordering
+        await delay(500);
+      }
       console.log('Daily news posted successfully!');
     } else {
       console.error('Could not find or create a suitable channel for posting news.');
@@ -113,10 +123,11 @@ function delay(ms) {
 }
 
 /**
- * Collect messages from all text channels for the last 24 hours
+ * Collect messages and images from all text channels for the last 24 hours
  */
-async function collectRecentMessages(guild) {
+async function collectRecentMessagesAndImages(guild) {
   const messages = [];
+  const images = [];
   const now = new Date();
   const twentyFourHoursAgo = new Date(now - 24 * 60 * 60 * 1000);
 
@@ -129,7 +140,6 @@ async function collectRecentMessages(guild) {
       console.log(`Collecting messages from #${channel.name}...`);
       
       let lastMessageId = null;
-      let fetchedMessages = [];
       let hasMoreMessages = true;
       
       // Fetch messages in batches
@@ -146,13 +156,48 @@ async function collectRecentMessages(guild) {
         // Add non-bot messages from the last 24 hours to our collection
         batch.forEach(msg => {
           if (!msg.author.bot && msg.createdAt > twentyFourHoursAgo) {
-            fetchedMessages.push({
+            // Collect message content
+            messages.push({
               author: msg.author.username,
               authorId: msg.author.id,
               content: msg.content,
               timestamp: msg.createdAt,
               channelName: channel.name
             });
+            
+            // Debug log for attachments
+            if (msg.attachments.size > 0) {
+              console.log(`Found ${msg.attachments.size} attachments in message from ${msg.author.username}`);
+              
+              // Collect images if they exist
+              msg.attachments.forEach(attachment => {
+                // Get the file extension
+                const url = attachment.url;
+                console.log(`Attachment URL: ${url}`);
+                
+                // Check if it's an image file using content type if available or URL extension as fallback
+                const contentType = attachment.contentType || '';
+                const isImageByType = contentType.startsWith('image/');
+                const isImageByExtension = /\.(jpg|jpeg|png|gif|webp)$/i.test(url);
+                const isImage = isImageByType || isImageByExtension;
+                
+                console.log(`Content Type: ${contentType}`);
+                console.log(`Is image by type: ${isImageByType}`);
+                console.log(`Is image by extension: ${isImageByExtension}`);
+                
+                if (isImage) {
+                  console.log(`Adding image from ${msg.author.username} to collection`);
+                  images.push({
+                    url: url,
+                    author: msg.author.username,
+                    channelName: channel.name,
+                    timestamp: msg.createdAt
+                  });
+                } else {
+                  console.log(`Attachment from ${msg.author.username} is not an image`);
+                }
+              });
+            }
           }
         });
         
@@ -168,8 +213,6 @@ async function collectRecentMessages(guild) {
         await delay(1000);
       }
       
-      messages.push(...fetchedMessages);
-      
     } catch (error) {
       console.error(`Error fetching messages from #${channel.name}:`, error);
     }
@@ -178,7 +221,16 @@ async function collectRecentMessages(guild) {
   // Sort messages by timestamp
   messages.sort((a, b) => a.timestamp - b.timestamp);
   
-  return messages;
+  // Log collected images for debugging
+  console.log(`Total images collected: ${images.length}`);
+  if (images.length > 0) {
+    console.log('Image URLs:');
+    images.forEach((img, index) => {
+      console.log(`[${index + 1}] ${img.url} by ${img.author} in #${img.channelName}`);
+    });
+  }
+  
+  return { messages, images };
 }
 
 /**
@@ -210,105 +262,215 @@ function extractUserMap(messages) {
 }
 
 /**
- * Format the final summary with proper Discord @mentions
+ * Extract sections from the summary by headers
  */
-function formatFinalSummary(summary, userMap) {
-  let formattedSummary = summary;
-  const mentionedUsers = new Set();
+function extractSections(summary) {
+  // Define the regular expressions for section headers
+  const sectionHeaders = [
+    '**# Daily Tech Trash**',
+    '**## Server Vibe Check**',
+    '**## Hot Topics**',
+    '**## Tech Corner**',
+    '**## Random BS**',
+    '**## 🏆 Quote of the Day**'
+  ];
   
-  // Process mentions in different formats:
-  // 1. Handle @Username format
-  const atMentionPattern = /@([\w\d_\s.-]+(\([^)]*\))?)/g;
-  let match;
-  while ((match = atMentionPattern.exec(summary)) !== null) {
-    const fullUsername = match[1].trim();
-    // Find the closest matching username in our userMap
-    for (const [username, userId] of userMap.entries()) {
-      if (fullUsername.includes(username) || username.includes(fullUsername)) {
-        const replacement = `<@${userId}>`;
-        formattedSummary = formattedSummary.replace(`@${fullUsername}`, replacement);
-        mentionedUsers.add(userId);
-        break;
-      }
-    }
-  }
+  const sections = [];
+  let currentHeader = '';
+  let currentContent = '';
   
-  // 2. Handle **@Username** format
-  const boldAtMentionPattern = /\*\*@([\w\d_\s.-]+(\([^)]*\))?)\*\*/g;
-  while ((match = boldAtMentionPattern.exec(summary)) !== null) {
-    const fullUsername = match[1].trim();
-    // Find the closest matching username in our userMap
-    for (const [username, userId] of userMap.entries()) {
-      if (fullUsername.includes(username) || username.includes(fullUsername)) {
-        const replacement = `**<@${userId}>**`;
-        formattedSummary = formattedSummary.replace(`**@${fullUsername}**`, replacement);
-        mentionedUsers.add(userId);
-        break;
-      }
-    }
-  }
+  // Split by lines to process each line
+  const lines = summary.split('\n');
   
-  // 3. Handle **Username** format (without @)
-  const boldUsernamePattern = /\*\*([\w\d_\s.-]+(\([^)]*\))?)\*\*/g;
-  while ((match = boldUsernamePattern.exec(summary)) !== null) {
-    const fullUsername = match[1].trim();
-    // Skip if it already contains a mention
-    if (fullUsername.includes('<@')) continue;
+  for (const line of lines) {
+    const isHeader = sectionHeaders.some(header => line.includes(header));
     
-    // Find the closest matching username in our userMap
-    for (const [username, userId] of userMap.entries()) {
-      if (fullUsername.includes(username) || username.includes(fullUsername)) {
-        const replacement = `**<@${userId}>**`;
-        // Use a more precise replacement to avoid double-replacing
-        const exactPattern = new RegExp(`\\*\\*${fullUsername.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\*\\*`, 'g');
-        formattedSummary = formattedSummary.replace(exactPattern, replacement);
-        mentionedUsers.add(userId);
-        break;
+    if (isHeader) {
+      // If we already have content for a previous header, save it
+      if (currentHeader && currentContent) {
+        sections.push({
+          header: currentHeader,
+          content: currentHeader + '\n' + currentContent
+        });
       }
+      
+      // Start new section
+      currentHeader = line;
+      currentContent = '';
+    } else if (currentHeader) {
+      // Add to current section
+      currentContent += '\n' + line;
     }
   }
   
-  return {
-    formattedSummary,
-    mentionedUsers: Array.from(mentionedUsers)
-  };
+  // Don't forget the last section
+  if (currentHeader && currentContent) {
+    sections.push({
+      header: currentHeader,
+      content: currentHeader + '\n' + currentContent
+    });
+  }
+  
+  return sections;
+}
+
+/**
+ * Format sections with proper Discord @mentions
+ */
+function formatSectionsWithMentions(sections, userMap) {
+  return sections.map(section => {
+    let formattedContent = section.content;
+    const mentionedUsers = new Set();
+    
+    // Process mentions in different formats:
+    // 1. Handle @Username format
+    const atMentionPattern = /@([\w\d_\s.-]+(\([^)]*\))?)/g;
+    let match;
+    while ((match = atMentionPattern.exec(section.content)) !== null) {
+      const fullUsername = match[1].trim();
+      // Find the closest matching username in our userMap
+      for (const [username, userId] of userMap.entries()) {
+        if (fullUsername.includes(username) || username.includes(fullUsername)) {
+          const replacement = `<@${userId}>`;
+          formattedContent = formattedContent.replace(`@${fullUsername}`, replacement);
+          mentionedUsers.add(userId);
+          break;
+        }
+      }
+    }
+    
+    // 2. Handle **@Username** format
+    const boldAtMentionPattern = /\*\*@([\w\d_\s.-]+(\([^)]*\))?)\*\*/g;
+    while ((match = boldAtMentionPattern.exec(section.content)) !== null) {
+      const fullUsername = match[1].trim();
+      // Find the closest matching username in our userMap
+      for (const [username, userId] of userMap.entries()) {
+        if (fullUsername.includes(username) || username.includes(fullUsername)) {
+          const replacement = `**<@${userId}>**`;
+          formattedContent = formattedContent.replace(`**@${fullUsername}**`, replacement);
+          mentionedUsers.add(userId);
+          break;
+        }
+      }
+    }
+    
+    // 3. Handle **Username** format (without @)
+    const boldUsernamePattern = /\*\*([\w\d_\s.-]+(\([^)]*\))?)\*\*/g;
+    while ((match = boldUsernamePattern.exec(section.content)) !== null) {
+      const fullUsername = match[1].trim();
+      // Skip if it already contains a mention
+      if (fullUsername.includes('<@')) continue;
+      
+      // Find the closest matching username in our userMap
+      for (const [username, userId] of userMap.entries()) {
+        if (fullUsername.includes(username) || username.includes(fullUsername)) {
+          const replacement = `**<@${userId}>**`;
+          // Use a more precise replacement to avoid double-replacing
+          const exactPattern = new RegExp(`\\*\\*${fullUsername.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\*\\*`, 'g');
+          formattedContent = formattedContent.replace(exactPattern, replacement);
+          mentionedUsers.add(userId);
+          break;
+        }
+      }
+    }
+    
+    return {
+      content: formattedContent,
+      mentionedUsers: Array.from(mentionedUsers)
+    };
+  });
 }
 
 /**
  * Generate a news summary using Anthropic Claude
  */
-async function generateSummary(messageContext) {
-  const prompt = `
-You are creating a daily summary for a Discord server focused on technology. The server members discuss computer science, machine learning, AI, tech news, startups, and coding projects. They are technically skilled and enjoy edgy humor.
+async function generateSummary(messageContext, images) {
+  // Get today's date for the prompt
+  const today = new Date();
+  const formattedDate = today.toLocaleDateString('en-US', { 
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  });
 
-I'll provide you with Discord messages from the last 24 hours. Your job is to create a summary that highlights key discussions and memorable moments.
+  // Include images if available
+  const imageContents = [];
+  
+  if (images.length > 0) {
+    // Take up to 5 most recent images
+    const recentImages = images.slice(-5);
+    
+    for (const image of recentImages) {
+      try {
+        console.log(`Adding image to API request: ${image.url}`);
+        imageContents.push({
+          type: "image",
+          source: {
+            type: "url",
+            url: image.url
+          }
+        });
+      } catch (error) {
+        console.error('Error including image:', error);
+      }
+    }
+  } else {
+    console.log('No images to include in the API request');
+  }
 
-YOUR PERSONA: You're "TechBro69", an edgy, sarcastic techie who doesn't hold back. You're blunt, sometimes crude, and love making edgy jokes. You speak in a casual, internet-culture way with occasional leetspeak. You're obsessed with the latest tech trends and always ready with hot takes.
-
-Guidelines:
-1. Use Discord markdown formatting liberally for better readability (bold, italics, headings, bullet points)
-2. Structure the summary in clear sections rather than one big paragraph
-3. Use people's usernames with proper Discord @ mention format
-4. Include important discussions, jokes, and memorable moments
-5. Maintain an edgy, sarcastic tone throughout 
-6. End with a "Today's Highlight" section featuring the most memorable quote
-
-Format your response with sections like this:
+  // Use the exact prompt format provided
+  const promptTemplate = `You are TechBro69, an AI tasked with creating a daily summary for a tech-focused Discord server. The summary is for:
+<formatted_date>
+${formattedDate}
+</formatted_date>
+Your job is to create an engaging, edgy summary of the last 24 hours of Discord messages, highlighting key discussions and memorable moments. You must maintain a sarcastic, blunt, and sometimes crude persona throughout the summary.
+Here are the Discord messages from the last 24 hours:
+<discord_messages>
+${messageContext}
+</discord_messages>
+Before drafting the summary, work inside <discord_analysis> tags in your thinking block to organize your thoughts and ensure you cover all required elements. Consider the following:
+1. List key discussions with usernames involved
+2. Note any tech-related conversations
+3. Identify standout quotes
+4. Describe any shared images
+5. Assess overall server mood and activity level
+After analyzing, create the summary using the following structure. Each section must be self-contained as they will be sent as separate messages:
 **# Daily Tech Trash**
 **## Server Vibe Check**
 [Brief overview paragraph about today's server mood/activity level]
-**## Hot Topics*
+**## Hot Topics**
 • [Topic 1 with usernames and commentary]
+• [Topic 2 with usernames and commentary]
+• [etc.]
 **## Tech Corner**
 [Any discussions about gadgets, code, or tech news]
 **## Random BS**
 [Funny moments, memes, or off-topic discussions]
 **## 🏆 Quote of the Day**
 > "[exact quote]" - **@Username**
-Use plenty of Discord markdown: **bold**, *italics*, || spoiler tags ||, > quote blocks, \`\`\`code blocks\`\`\`, and emojis and also make sure not to have too much spacing in the message conservative without it being overly compressed.
-Here are the messages from the last 24 hours:
+Important guidelines:
+1. Use ample Discord markdown: **bold**, *italics*, || spoiler tags ||, > quote blocks, \`\`\`code blocks\`\`\`, and emojis.
+2. Be concise without being overly compressed.
+3. Maintain an edgy, sarcastic tone throughout. Use casual language and occasional leetspeak.
+4. Ensure all specified sections are present and properly formatted.
+5. Subtly reference any images shared in the Discord messages.
+Remember, you are TechBro69 - don't hold back on the sass and tech enthusiasm!`;
 
-${messageContext}`;
+  // Create text content for the prompt
+  const textContent = {
+    type: "text",
+    text: promptTemplate
+  };
+
+  // Construct the full message content with images first, then text
+  // Images first, then text for better processing
+  const messageContent = [...imageContents, textContent];
+
+  // Log the message content being sent to the API for debugging
+  console.log('=== DEBUG: MESSAGE CONTENT SENT TO API ===');
+  console.log(JSON.stringify(messageContent, null, 2));
+  console.log('=== END DEBUG MESSAGE CONTENT ===');
 
   try {
     // Call Anthropic Claude API
@@ -322,13 +484,13 @@ ${messageContext}`;
       },
       data: {
         model: 'claude-3-7-sonnet-20250219',
-        max_tokens: 500,
+        max_tokens: 1200,
         temperature: 1.0,
-        system: "You generate entertaining daily summaries of Discord conversations for tech-focused servers. You adopt an edgy, sarcastic 'TechBro69' persona who uses Discord markdown formatting to create readable, sectioned summaries. Your tone is blunt, sometimes crude, and includes edgy humor while highlighting the day's most interesting conversations.",
+        system: "You generate entertaining daily summaries of Discord conversations for tech-focused servers as TechBro69. Your summary must include ALL the specified sections and maintain a sarcastic, blunt tone throughout.",
         messages: [
           {
             role: 'user',
-            content: prompt
+            content: messageContent
           }
         ]
       }
@@ -336,6 +498,11 @@ ${messageContext}`;
 
     // Extract the response content
     const summary = response.data.content[0].text;
+    
+    // Log the summary for debugging
+    console.log('=== DEBUG: SUMMARY RECEIVED FROM API ===');
+    console.log(summary);
+    console.log('=== END DEBUG SUMMARY ===');
     
     return summary;
   } catch (error) {
