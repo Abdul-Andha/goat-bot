@@ -267,12 +267,10 @@ function extractUserMap(messages) {
 function extractSections(summary) {
   // Define the regular expressions for section headers
   const sectionHeaders = [
-    '**# Daily Tech Trash**',
-    '**## Server Vibe Check**',
-    '**## Hot Topics**',
-    '**## Tech Corner**',
-    '**## Random BS**',
-    '**## 🏆 Quote of the Day**'
+    '**📺 Good Morning from Your Server News Desk**',
+    '**🗣️ Server Highlights**',
+    '**💬 Quote of the Day**',
+    '**🌐 Top News Headlines**'
   ];
   
   const sections = [];
@@ -283,22 +281,25 @@ function extractSections(summary) {
   const lines = summary.split('\n');
   
   for (const line of lines) {
-    const isHeader = sectionHeaders.some(header => line.includes(header));
+    const trimmedLine = line.trim();
+    if (!trimmedLine) continue; // Skip empty lines
+    
+    const isHeader = sectionHeaders.some(header => trimmedLine.includes(header));
     
     if (isHeader) {
       // If we already have content for a previous header, save it
       if (currentHeader && currentContent) {
         sections.push({
           header: currentHeader,
-          content: currentHeader + '\n' + currentContent
+          content: currentHeader + '\n' + currentContent.trim()
         });
       }
       
       // Start new section
-      currentHeader = line;
+      currentHeader = trimmedLine;
       currentContent = '';
     } else if (currentHeader) {
-      // Add to current section
+      // Add to current section but preserve original line (including indentation)
       currentContent += '\n' + line;
     }
   }
@@ -307,7 +308,7 @@ function extractSections(summary) {
   if (currentHeader && currentContent) {
     sections.push({
       header: currentHeader,
-      content: currentHeader + '\n' + currentContent
+      content: currentHeader + '\n' + currentContent.trim()
     });
   }
   
@@ -382,7 +383,7 @@ function formatSectionsWithMentions(sections, userMap) {
 }
 
 /**
- * Generate a news summary using Anthropic Claude
+ * Generate a news summary using Anthropic Claude with web search
  */
 async function generateSummary(messageContext, images) {
   // Get today's date for the prompt
@@ -419,43 +420,53 @@ async function generateSummary(messageContext, images) {
     console.log('No images to include in the API request');
   }
 
-  // Use the exact prompt format provided
-  const promptTemplate = `You are TechBro69, an AI tasked with creating a daily summary for a tech-focused Discord server. The summary is for:
-<formatted_date>
-${formattedDate}
-</formatted_date>
-Your job is to create an engaging, edgy summary of the last 24 hours of Discord messages, highlighting key discussions and memorable moments. You must maintain a sarcastic, blunt, and sometimes crude persona throughout the summary.
-Here are the Discord messages from the last 24 hours:
+  // New prompt with news anchor style and proper indentation
+  const promptTemplate = `You are a professional news anchor delivering the morning news for a Discord server. Today's date is ${formattedDate}.
+
+Your task is to create a CONCISE news broadcast covering:
+1. Server activity from the past 24 hours (NOT today)
+2. One memorable quote 
+3. Three current news headlines
+
+Discord messages from the past 24 hours:
 <discord_messages>
 ${messageContext}
 </discord_messages>
-Before drafting the summary, work inside <discord_analysis> tags in your thinking block to organize your thoughts and ensure you cover all required elements. Consider the following:
-1. List key discussions with usernames involved
-2. Note any tech-related conversations
-3. Identify standout quotes
-4. Describe any shared images
-5. Assess overall server mood and activity level
-After analyzing, create the summary using the following structure. Each section must be self-contained as they will be sent as separate messages:
-**# Daily Tech Trash**
-**## Server Vibe Check**
-[Brief overview paragraph about today's server mood/activity level]
-**## Hot Topics**
-• [Topic 1 with usernames and commentary]
-• [Topic 2 with usernames and commentary]
-• [etc.]
-**## Tech Corner**
-[Any discussions about gadgets, code, or tech news]
-**## Random BS**
-[Funny moments, memes, or off-topic discussions]
-**## 🏆 Quote of the Day**
-> "[exact quote]" - **@Username**
-Important guidelines:
-1. Use ample Discord markdown: **bold**, *italics*, || spoiler tags ||, > quote blocks, \`\`\`code blocks\`\`\`, and emojis.
-2. Be concise without being overly compressed.
-3. Maintain an edgy, sarcastic tone throughout. Use casual language and occasional leetspeak.
-4. Ensure all specified sections are present and properly formatted.
-5. Subtly reference any images shared in the Discord messages.
-Remember, you are TechBro69 - don't hold back on the sass and tech enthusiasm!`;
+
+Create this EXACT format with proper indentation:
+
+**📺 Good Morning from Your Server News Desk**
+Welcome to the ${formattedDate} morning update. Here's what happened on the server in the past 24 hours.
+
+**🗣️ Server Highlights**
+  • **Topic 1:** Brief description with @usernames
+  
+  • **Topic 2:** Brief description with @usernames
+  
+  • **Topic 3:** Brief description with @usernames
+
+**💬 Quote of the Day**
+Our standout moment from the past 24 hours:
+ 
+> "quote" - @Username
+  Brief context why this was notable.
+
+**🌐 Top News Headlines**
+Before we wrap up, here are the top news stories this morning:
+  
+  1. **Headline**: One-sentence summary
+  
+  2. **Headline**: One-sentence summary  
+  
+  3. **Headline**: One-sentence summary
+
+That's all for this morning's update. Stay informed and have a great day!
+
+IMPORTANT:
+- Be CONCISE - no verbose explanations
+- Keep EXACT indentation (2 spaces before bullet points and numbers)
+- Professional tone but brief
+- Include usernames with @`;
 
   // Create text content for the prompt
   const textContent = {
@@ -463,17 +474,23 @@ Remember, you are TechBro69 - don't hold back on the sass and tech enthusiasm!`;
     text: promptTemplate
   };
 
-  // Construct the full message content with images first, then text
-  // Images first, then text for better processing
+  // Construct the full message content
   const messageContent = [...imageContents, textContent];
 
-  // Log the message content being sent to the API for debugging
-  console.log('=== DEBUG: MESSAGE CONTENT SENT TO API ===');
-  console.log(JSON.stringify(messageContent, null, 2));
-  console.log('=== END DEBUG MESSAGE CONTENT ===');
-
   try {
-    // Call Anthropic Claude API
+    // Configure web search tool
+    const webSearchTool = {
+      type: "web_search_20250305",
+      name: "web_search",
+      max_uses: 3,
+      user_location: {
+        type: "approximate",
+        country: "US",
+        timezone: "America/Chicago"
+      }
+    };
+
+    // Call Anthropic Claude API with web search tool
     const response = await axios({
       method: 'post',
       url: 'https://api.anthropic.com/v1/messages',
@@ -485,8 +502,9 @@ Remember, you are TechBro69 - don't hold back on the sass and tech enthusiasm!`;
       data: {
         model: 'claude-3-7-sonnet-20250219',
         max_tokens: 1200,
-        temperature: 1.0,
-        system: "You generate entertaining daily summaries of Discord conversations for tech-focused servers as TechBro69. Your summary must include ALL the specified sections and maintain a sarcastic, blunt tone throughout.",
+        temperature: 0.5,
+        tools: [webSearchTool],
+        system: "You are a professional news anchor delivering morning updates for a Discord server. Be CONCISE. Search for current news headlines and include them in your report. PRESERVE the exact indentation from the template.",
         messages: [
           {
             role: 'user',
@@ -497,7 +515,12 @@ Remember, you are TechBro69 - don't hold back on the sass and tech enthusiasm!`;
     });
 
     // Extract the response content
-    const summary = response.data.content[0].text;
+    let summary = '';
+    for (const content of response.data.content) {
+      if (content.type === 'text') {
+        summary += content.text;
+      }
+    }
     
     // Log the summary for debugging
     console.log('=== DEBUG: SUMMARY RECEIVED FROM API ===');
